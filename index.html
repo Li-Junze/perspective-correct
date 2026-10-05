@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>透视矫正 · 拖图 → 选 4 条边 → 拉正导出</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#fff; --ink:#1f2430; --muted:#6b7280;
+    --line:#e5e7eb; --brand:#4f46e5; --brand2:#7c3aed; --ok:#16a34a; --warn:#d97706; --pin:#db2777; --shadow:0 6px 24px rgba(31,36,48,.08);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);line-height:1.55}
+  header{background:linear-gradient(120deg,var(--brand),var(--brand2));color:#fff;padding:16px 24px;box-shadow:var(--shadow)}
+  header h1{margin:0;font-size:19px;letter-spacing:.4px}
+  header p{margin:4px 0 0;font-size:13px;opacity:.92}
+  .wrap{max-width:1320px;margin:0 auto;padding:18px;display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:960px){.wrap{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);overflow:hidden}
+  .card h2{margin:0;padding:11px 15px;font-size:14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
+  .card h2 .tag{font-size:11px;color:var(--muted);font-weight:400}
+  .body{padding:14px}
+  #drop{border:2px dashed var(--line);border-radius:12px;padding:14px;text-align:center;color:var(--muted);cursor:pointer;transition:.18s;background:#fafbff;font-size:13px}
+  #drop.hover{border-color:var(--brand);background:#eef0ff;color:var(--brand)}
+  #drop b{color:var(--ink)}
+  .toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;align-items:center}
+  button{font:inherit;font-size:12.5px;border:1px solid var(--line);background:#fff;color:var(--ink);padding:8px 13px;border-radius:9px;cursor:pointer;transition:.15s}
+  button:hover:not(:disabled){border-color:var(--brand);color:var(--brand)}
+  button.primary{background:linear-gradient(120deg,var(--brand),var(--brand2));color:#fff;border:none}
+  button.primary:disabled{opacity:.45;cursor:not-allowed;background:#c7c9d4}
+  button.ghost{background:#f3f4f6}
+  button.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  button.pin.on{background:var(--pin);border-color:var(--pin)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+  .seg button{border:none;border-radius:0;padding:8px 12px}
+  .stage{position:relative;background:
+      linear-gradient(45deg,#eceef3 25%,transparent 25%),linear-gradient(-45deg,#eceef3 25%,transparent 25%),
+      linear-gradient(45deg,transparent 75%,#eceef3 75%),linear-gradient(-45deg,transparent 75%,#eceef3 75%);
+    background-size:20px 20px;background-position:0 0,0 10px,10px -10px,-10px 0;
+    border-radius:12px;overflow:hidden;min-height:340px;height:62vh;max-height:660px;display:flex;align-items:center;justify-content:center;margin-top:12px}
+  #src{display:block;touch-action:none;cursor:crosshair}
+  #stageOut{height:62vh;max-height:660px}
+  #out{display:none;max-width:100%;border-radius:8px;background:#fff}
+  .hint{font-size:12px;color:var(--muted);margin:10px 0 0}
+  .status{font-size:12.5px;margin-top:9px;color:var(--muted);min-height:17px}
+  .status.ok{color:var(--ok)} .status.err{color:#dc2626}
+  .meta{font-size:12px;color:var(--muted);margin-top:6px}
+  .zoomctl{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12px;color:var(--muted)}
+  .zoomctl input[type=range]{flex:1}
+  .pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;background:#fce7f3;color:var(--pin)}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin-top:10px}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .dot{width:12px;height:12px;border-radius:50%;display:inline-block;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.15)}
+</style>
+</head>
+<body>
+<header>
+  <h1>透视矫正工具</h1>
+  <p>拖入图片 → 点 4 个角（或沿边点几下后钉 4 条边）→ 拉正导出</p>
+</header>
+
+<div class="wrap">
+  <!-- 左：原图 + 选点 -->
+  <div class="card">
+    <h2>① 原图与选点 <span class="tag">全程本地，不上传</span></h2>
+    <div class="body">
+      <div id="drop">把图片拖到这里，或 <b>点击选择</b>（支持 PNG / JPG / WEBP）。清空后仍可继续拖入。</div>
+      <input type="file" id="file" accept="image/*" hidden>
+      <div class="toolbar">
+        <button id="clear" class="ghost" disabled>清空图片</button>
+        <div class="seg" id="modeSeg">
+          <button id="mPick" class="on">✏️ 选点</button>
+          <button id="mPin" class="pin">📌 钉边</button>
+          <button id="mPan">✋ 平移</button>
+        </div>
+        <button id="reset" class="ghost" disabled>重置点</button>
+        <button id="clearPins" class="ghost" disabled>清除钉边</button>
+      </div>
+      <div class="zoomctl">
+        <span>缩放</span>
+        <input type="range" id="zoom" min="0.2" max="6" step="0.05" value="1" disabled>
+        <span id="zoomVal">100%</span>
+        <button id="fitView" class="ghost" disabled>适应</button>
+      </div>
+      <div class="stage" id="stage">
+        <canvas id="src"></canvas>
+        <div id="emptySrc" style="color:var(--muted);font-size:13px">尚未载入图片</div>
+      </div>
+      <p class="hint" id="hint"><b>用法一（最简）</b>：直接点 4 个角，绿色框就是取图区域。<br>
+        <b>用法二（角被遮挡）</b>：沿可见边多点几下（每条边 ≥2 点），切「📌 钉边」点这 4 条边，被遮的角由相邻边延长相交自动补出。<br>
+        区域 = 你选中的 4 条边围成的四边形，<b>不做任何拟合</b>。滚轮缩放、Alt/中键拖动可精确选点，右键删点。</p>
+      <p class="status" id="status"></p>
+      <div class="legend" id="legend" style="display:none">
+        <span><i class="dot" style="background:#ef4444"></i>角 1</span>
+        <span><i class="dot" style="background:#f59e0b"></i>角 2</span>
+        <span><i class="dot" style="background:#10b981"></i>角 3</span>
+        <span><i class="dot" style="background:#3b82f6"></i>角 4</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 右：结果 -->
+  <div class="card">
+    <h2>② 矫正结果 <span class="tag">原图分辨率</span></h2>
+    <div class="body">
+      <div class="toolbar">
+        <button id="fitBtn" class="primary" disabled>生成四边形</button>
+        <button id="correct" class="primary" disabled>透视矫正</button>
+        <button id="download" class="ghost" disabled>下载 PNG</button>
+      </div>
+      <div class="stage" id="stageOut" style="align-items:flex-start;justify-content:center;padding:8px">
+        <canvas id="out"></canvas>
+        <div id="emptyOut" style="color:var(--muted);font-size:13px">点「透视矫正」后在此显示</div>
+      </div>
+      <p class="meta" id="meta"></p>
+      <p class="status" id="status2"></p>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============== DOM ============== */
+const $=id=>document.getElementById(id);
+const drop=$("drop"), file=$("file"), stage=$("stage"), src=$("src"), emptySrc=$("emptySrc");
+const legend=$("legend"), hint=$("hint"), status=$("status"), status2=$("status2"), reset=$("reset"), clear=$("clear");
+const fitBtn=$("fitBtn"), zoom=$("zoom"), zoomVal=$("zoomVal"), fitView=$("fitView");
+const mPick=$("mPick"), mPin=$("mPin"), mPan=$("mPan");
+const correct=$("correct"), download=$("download"), out=$("out"), emptyOut=$("emptyOut"), meta=$("meta");
+const clearPins=$("clearPins");
+
+const COLORS=["#ef4444","#f59e0b","#10b981","#3b82f6"];
+
+let img=null, natW=0, natH=0, srcData=null;
+let pts=[];            // 多边形选点（原图像素坐标）
+let pins=[];           // 钉死的边：{L,p1,p2} —— L 为已拟合直线，p1/p2 为该边在多边形上的端点（用于高亮）
+let corners=null;      // 四角（原图像素坐标）：4 个点直接给，或 4 条钉边的交点
+let mode="pick";       // pick | pin | pan
+let view={zoom:1,panX:0,panY:0}, baseScale=1, vw=0, vh=0;
+let dragging=-1, panning=false, lastX=0, lastY=0;
+
+/* ============== 纯几何（已用 Node 验证） ============== */
+function solve8(A,b){const n=8,M=A.map((r,i)=>r.concat(b[i]));
+  for(let c=0;c<n;c++){let p=c;for(let r=c+1;r<n;r++)if(Math.abs(M[r][c])>Math.abs(M[p][c]))p=r;
+    [M[c],M[p]]=[M[p],M[c]];const pv=M[c][c];if(Math.abs(pv)<1e-12)return null;
+    for(let j=c;j<=n;j++)M[c][j]/=pv;
+    for(let r=0;r<n;r++){if(r===c)continue;const f=M[r][c];if(f!==0)for(let j=c;j<=n;j++)M[r][j]-=f*M[c][j];}}
+  return M.map(r=>r[n]);}
+function computeHomography(src,dst){const A=[],B=[];
+  for(let i=0;i<4;i++){const{x,y}=src[i],{x:u,y:v}=dst[i];
+    A.push([x,y,1,0,0,0,-x*u,-y*u]);B.push(u);
+    A.push([0,0,0,x,y,1,-x*v,-y*v]);B.push(v);}
+  const s=solve8(A,B);if(!s)return null;return [...s,1];}
+function inv3(m){const[a,b,c,d,e,f,g,h,i]=m;
+  const A=e*i-f*h,B=-(d*i-f*g),C=d*h-e*g;const det=a*A+b*B+c*C;if(Math.abs(det)<1e-12)return null;const id=1/det;
+  return[A*id,(c*h-b*i)*id,(b*f-c*e)*id,B*id,(a*i-c*g)*id,(c*d-a*f)*id,C*id,(b*g-a*h)*id,(a*e-b*d)*id];}
+function applyH(m,x,y){const w=m[6]*x+m[7]*y+m[8];return[(m[0]*x+m[1]*y+m[2])/w,(m[3]*x+m[4]*y+m[5])/w];}
+function orderPoints(P){const c=P.reduce((s,p)=>({x:s.x+p.x,y:s.y+p.y}),{x:0,y:0});c.x/=4;c.y/=4;
+  return P.map(p=>({x:p.x,y:p.y,a:Math.atan2(p.y-c.y,p.x-c.x)})).sort((u,v)=>u.a-v.a).map(p=>({x:p.x,y:p.y}));}
+function fitLine(pts2){const n=pts2.length;if(n===2)return line2(pts2[0],pts2[1]);
+  // 总最小二乘（PCA）：法向取协方差矩阵较小特征值方向，对任意朝向稳健
+  let mx=0,my=0;for(const p of pts2){mx+=p.x;my+=p.y;}mx/=n;my/=n;
+  let sxx=0,syy=0,sxy=0;for(const p of pts2){const dx=p.x-mx,dy=p.y-my;sxx+=dx*dx;syy+=dy*dy;sxy+=dx*dy;}
+  if(sxx+syy<1e-12)return line2(pts2[0],pts2[1]);
+  const theta=0.5*Math.atan2(2*sxy, sxx-syy);   // 直线方向角
+  let a=-Math.sin(theta), b=Math.cos(theta);      // 法向 = 方向旋转 90°
+  let c=-(a*mx+b*my);const N=Math.hypot(a,b)||1;a/=N;b/=N;c/=N;
+  if(a<0||(Math.abs(a)<1e-9&&b<0)){a=-a;b=-b;c=-c;} // 符号归一 → 同线表示唯一，sameLine 可靠
+  return{a,b,c};}
+function line2(p,q){let a=q.y-p.y, b=p.x-q.x, c=-(a*p.x+b*p.y);const N=Math.hypot(a,b)||1;a/=N;b/=N;c/=N;
+  if(a<0||(Math.abs(a)<1e-9&&b<0)){a=-a;b=-b;c=-c;}return{a,b,c};}
+function ptLineDist(L,p){return Math.abs(L.a*p.x+L.b*p.y+L.c);}
+function canon(L){return {a:+L.a.toFixed(3),b:+L.b.toFixed(3),c:+L.c.toFixed(3)};}
+function cross(o,a,b){return (a.x-o.x)*(b.y-o.y)-(a.y-o.y)*(b.x-o.x);}
+function intersect(L1,L2){const den=L1.a*L2.b-L2.a*L1.b;if(Math.abs(den)<1e-9)return null;
+  return {x:(L1.b*L2.c-L2.b*L1.c)/den,y:(L2.a*L1.c-L1.a*L2.c)/den};}
+function sameLine(L1,L2){const d=canon(L1),e=canon(L2);return Math.abs(d.a-e.a)<0.03&&Math.abs(d.b-e.b)<0.03&&Math.abs(d.c-e.c)<4;}
+// 按序 4 点是否构成凸四边形（叉号一致）
+function isConvexQuad(q){let sgn=0;
+  for(let i=0;i<4;i++){const c=cross(q[i],q[(i+1)%4],q[(i+2)%4]);const s=c>0?1:(c<0?-1:0);
+    if(s===0)return false;if(sgn===0)sgn=s;else if(s!==sgn)return false;}
+  return true;}
+
+/* ==== 四边形 = 你选中的 4 条边围成（不做任何拟合） ==== */
+// 4 条直线两两相交共 6 个点：相邻边的交点 = 四角，对边的交点 = 消失点。
+// 取离参考点（选点质心）最近的 4 个交点，即为这 4 条边围成的四边形。
+function quadFromEdges(L4, ref){
+  for(let i=0;i<4;i++)for(let j=i+1;j<4;j++)if(sameLine(L4[i],L4[j]))return null; // 同一条边钉了两次
+  const inter=[];
+  for(let i=0;i<4;i++)for(let j=i+1;j<4;j++){const p=intersect(L4[i],L4[j]);if(p)inter.push(p);}
+  const u=[];for(const p of inter)if(!u.some(q=>Math.hypot(q.x-p.x,q.y-p.y)<1e-6))u.push(p);
+  if(u.length<4) return null;
+  const P=(ref&&ref.length)?ref:u;
+  // 剔除数值发散的病态交点（对边近乎完全平行时会给出巨大坐标）
+  let diag=0;for(const p of P)for(const q of P)diag=Math.max(diag,Math.hypot(p.x-q.x,p.y-q.y));
+  const ok=u.filter(p=>Number.isFinite(p.x)&&Number.isFinite(p.y)&&Math.abs(p.x)<1e6&&Math.abs(p.y)<1e6);
+  if(ok.length<4) return null;
+  const cx=P.reduce((s,p)=>s+p.x,0)/P.length, cy=P.reduce((s,p)=>s+p.y,0)/P.length;
+  ok.sort((p,q)=>Math.hypot(p.x-cx,p.y-cy)-Math.hypot(q.x-cx,q.y-cy));
+  const o=orderPoints(ok.slice(0,4));
+  return isConvexQuad(o)?o:null;
+}
+// 四角来源：① 钉满 4 条边 → 4 条边的交点；② 恰好 4 个选点 → 就是这 4 个点
+function fitCorners(){
+  if(pins.length===4) return quadFromEdges(pins.map(s=>s.L), pts);
+  if(pts.length===4 && pins.length===0) return orderPoints(pts.map(p=>({x:p.x,y:p.y})));
+  return null;
+}
+
+/* ============== 坐标变换 ============== */
+// 单一变换模型：canvas 固定为 stage 尺寸；图像用 translate(panX,panY)+scale(S) 绘制。
+// 覆盖层与命中检测都走同一套 imgToScreen / screenToImg，避免双重居中与取整漂移。
+function S(){return baseScale*view.zoom;}
+function computeView(){const r=stage.getBoundingClientRect();
+  vw=r.width; vh=r.height;
+  if(!img){src.style.display="none";return;}
+  const pad=24; baseScale=Math.min((vw-pad)/natW,(vh-pad)/natH,4);
+  if(baseScale<=0)baseScale=1;
+  src.width=Math.max(1,Math.round(vw)); src.height=Math.max(1,Math.round(vh));
+  src.style.display="block"; emptySrc.style.display="none";
+  const s=baseScale*view.zoom;
+  view.panX=(vw-natW*s)/2; view.panY=(vh-natH*s)/2;
+}
+function imgToScreen(x,y){const s=S();return {x:view.panX+x*s, y:view.panY+y*s};}
+function screenToImg(sx,sy){const s=S();return {x:(sx-view.panX)/s, y:(sy-view.panY)/s};}
+function evtPos(e){const r=src.getBoundingClientRect();const cx=(e.touches?e.touches[0].clientX:e.clientX);const cy=(e.touches?e.touches[0].clientY:e.clientY);return {x:cx-r.left, y:cy-r.top};}
+
+/* ============== 绘制 ============== */
+function segs(){const n=pts.length,arr=[];if(n>=2)for(let i=0;i<n;i++)arr.push({i,j:(i+1)%n});return arr;}
+function drawSrc(){
+  if(!img){return;}
+  const ctx=src.getContext("2d");
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.clearRect(0,0,src.width,src.height);
+  const s=S();
+  ctx.save();
+  ctx.translate(view.panX,view.panY); ctx.scale(s,s);
+  ctx.imageSmoothingEnabled=true;
+  ctx.drawImage(img,0,0,natW,natH);
+  ctx.restore();
+  // 多边形（实时闭合：最后一点连第一点）
+  if(pts.length>=2){
+    ctx.lineWidth=2;ctx.strokeStyle="rgba(79,70,229,.9)";ctx.beginPath();
+    for(let i=0;i<pts.length;i++){const s=imgToScreen(pts[i].x,pts[i].y);i?ctx.lineTo(s.x,s.y):ctx.moveTo(s.x,s.y);}
+    if(pts.length>=3)ctx.closePath();
+    ctx.stroke();
+  }
+  // 钉死的边：高亮段 + 无限线
+  for(const s of pins){
+    const a=s.p1, b=s.p2;
+    const sa=imgToScreen(a.x,a.y), sb=imgToScreen(b.x,b.y);
+    ctx.lineWidth=4;ctx.strokeStyle="var(--pin)";ctx.strokeStyle="#db2777";ctx.beginPath();ctx.moveTo(sa.x,sa.y);ctx.lineTo(sb.x,sb.y);ctx.stroke();
+    const L=s.L;
+    const foot={x:-L.a*L.c, y:-L.b*L.c};
+    const dir={x:L.b, y:-L.a}; const T=Math.max(natW,natH)*2;
+    const p1=imgToScreen(foot.x-dir.x*T, foot.y-dir.y*T), p2=imgToScreen(foot.x+dir.x*T, foot.y+dir.y*T);
+    ctx.setLineDash([6,5]);ctx.lineWidth=2;ctx.strokeStyle="rgba(219,39,118,.55)";ctx.beginPath();ctx.moveTo(p1.x,p1.y);ctx.lineTo(p2.x,p2.y);ctx.stroke();ctx.setLineDash([]);
+  }
+  // 四边形（取图区域）
+  if(corners){
+    ctx.lineWidth=2.5;ctx.strokeStyle="rgba(16,163,74,.95)";ctx.beginPath();
+    corners.forEach((p,i)=>{const s=imgToScreen(p.x,p.y);i?ctx.lineTo(s.x,s.y):ctx.moveTo(s.x,s.y);});ctx.closePath();ctx.stroke();
+    corners.forEach((p,i)=>{const s=imgToScreen(p.x,p.y);
+      ctx.beginPath();ctx.arc(s.x,s.y,8,0,7);ctx.fillStyle=COLORS[i];ctx.fill();ctx.lineWidth=2;ctx.strokeStyle="#fff";ctx.stroke();
+      ctx.fillStyle="#fff";ctx.font="bold 11px sans-serif";ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(String(i+1),s.x,s.y);});
+  }
+  // 选点
+  pts.forEach((p,i)=>{const s=imgToScreen(p.x,p.y);
+    ctx.beginPath();ctx.arc(s.x,s.y,6,0,7);ctx.fillStyle="#4f46e5";ctx.fill();ctx.lineWidth=2;ctx.strokeStyle="#fff";ctx.stroke();});
+}
+
+/* ============== 命中检测 ============== */
+function nearPt(sx,sy){const th=10;for(let i=0;i<pts.length;i++){const s=imgToScreen(pts[i].x,pts[i].y);if(Math.hypot(s.x-sx,s.y-sy)<th)return i;}return -1;}
+function pointSegDist(px,py,a,b){
+  const dx=b.x-a.x,dy=b.y-a.y;const L2=dx*dx+dy*dy||1;
+  let t=((px-a.x)*dx+(py-a.y)*dy)/L2; t=Math.max(0,Math.min(1,t));
+  const x=a.x+t*dx,y=a.y+t*dy;return Math.hypot(px-x,py-y);
+}
+function nearSeg(sx,sy){const S=segs();let bi=-1,bd=1e9;
+  for(let k=0;k<S.length;k++){const a=imgToScreen(pts[S[k].i].x,pts[S[k].i].y),b=imgToScreen(pts[S[k].j].x,pts[S[k].j].y);
+    const d=pointSegDist(sx,sy,a,b);if(d<bd){bd=d;bi=k;}}
+  return bd<14?bi:-1;}
+function nearPin(sx,sy){const im=screenToImg(sx,sy);const th=14/S(); // 屏幕 14px → 原图像素阈值
+  for(let k=0;k<pins.length;k++){if(ptLineDist(pins[k].L,im)<th)return k;}return -1;}
+// 从被点的段 si 出发，沿多边形合并所有与其共线的相邻段，得到整条直边的所有点（多点拟合更稳）
+function edgePoints(si){
+  const n=pts.length; if(n<2) return [];
+  const Sg=segs(); const L0=fitLine([pts[Sg[si].i],pts[Sg[si].j]]);
+  const segIdx=new Set([si]);
+  let cur=si;
+  while(true){const prev=(cur-1+n)%n; if(segIdx.has(prev))break; const Lp=fitLine([pts[Sg[prev].i],pts[Sg[prev].j]]); if(sameLine(Lp,L0))segIdx.add(prev); else break; cur=prev;}
+  cur=si;
+  while(true){const nxt=(cur+1)%n; if(segIdx.has(nxt))break; const Ln=fitLine([pts[Sg[nxt].i],pts[Sg[nxt].j]]); if(sameLine(Ln,L0))segIdx.add(nxt); else break; cur=nxt;}
+  const allPts=[]; for(const k of segIdx){allPts.push(pts[Sg[k].i],pts[Sg[k].j]);}
+  const uniq=[]; for(const p of allPts){if(!uniq.includes(p))uniq.push(p);} // 相邻段共享点对象 → 引用去重
+  return uniq;
+}
+// 重算四角（4 条边/4 个点就出，不做拟合）并刷新
+function refresh(){corners=fitCorners();drawSrc();updateUI();}
+
+/* ============== 交互 ============== */
+function down(e){
+  if(!img)return;e.preventDefault();
+  const p=evtPos(e);
+  const wantPan=(mode==="pan")||e.button===1||e.altKey;
+  if(wantPan){panning=true;lastX=p.x;lastY=p.y;return;}
+  const hit=nearPt(p.x,p.y);
+  if(mode==="pick"&&hit!==-1){dragging=hit;return;} // 仅选点模式可拖动点；钉边模式优先钉边/取消钉边
+  if(mode==="pin"){
+    const pi=nearPin(p.x,p.y);
+    if(pi>=0){pins.splice(pi,1);refresh();return;}
+    const si=nearSeg(p.x,p.y);
+    if(si>=0){
+      const ep=edgePoints(si); const L=fitLine(ep); const p1=ep[0], p2=ep[ep.length-1];
+      const ex=pins.findIndex(s=>sameLine(s.L,L));
+      if(ex>=0) pins[ex]={L,p1,p2};              // 同一条边重复钉 → 更新，不增计数
+      else { pins.push({L,p1,p2}); if(pins.length>4) pins.shift(); } // 超 4 根自动弃最早
+      refresh(); return;
+    }
+    return;
+  }
+  // 选点模式：空白处新增点
+  const im=screenToImg(p.x,p.y);im.x=Math.max(0,Math.min(natW,im.x));im.y=Math.max(0,Math.min(natH,im.y));
+  pts.push(im);refresh();
+}
+function move(e){
+  if(!img)return;const p=evtPos(e);
+  if(panning){view.panX+=p.x-lastX;view.panY+=p.y-lastY;lastX=p.x;lastY=p.y;drawSrc();return;}
+  if(dragging>=0){const im=screenToImg(p.x,p.y);
+    pts[dragging]={x:Math.max(0,Math.min(natW,im.x)),y:Math.max(0,Math.min(natH,im.y))};refresh();}
+}
+function up(){panning=false;dragging=-1;}
+function onContext(e){if(!img)return;e.preventDefault();const p=evtPos(e);const hit=nearPt(p.x,p.y);if(hit>=0){removePt(hit);}}
+
+function removePt(k){
+  pts.splice(k,1);
+  refresh(); // 钉边已存为独立直线，删点不影响钉边；四角重算
+}
+
+src.addEventListener("mousedown",down);src.addEventListener("mousemove",move);window.addEventListener("mouseup",up);
+src.addEventListener("contextmenu",onContext);
+src.addEventListener("wheel",e=>{if(!img)return;e.preventDefault();const p=evtPos(e);const f=e.deltaY<0?1.12:1/1.12;
+  const oldS=baseScale*view.zoom;
+  const z=Math.max(0.2,Math.min(6,view.zoom*f));const newS=baseScale*z;const k=newS/oldS;
+  view.panX=p.x-(p.x-view.panX)*k; view.panY=p.y-(p.y-view.panY)*k; view.zoom=z;
+  zoom.value=z;zoomVal.textContent=Math.round(z*100)+"%";drawSrc();},{passive:false});
+// 触摸：单指选点/拖动，双指平移
+let lst=null;
+src.addEventListener("touchstart",e=>{if(e.touches.length===1){down(e);}else if(e.touches.length===2){const a=e.touches[0],b=e.touches[1];lst={x:(a.clientX+b.clientX)/2,y:(a.clientY+b.clientY)/2};}},{passive:false});
+src.addEventListener("touchmove",e=>{if(e.touches.length===1)move(e);else if(lst){const a=e.touches[0],b=e.touches[1];const mx=(a.clientX+b.clientX)/2,my=(a.clientY+b.clientY)/2;view.panX+=mx-lst.x;view.panY+=my-lst.y;lst={x:mx,y:my};drawSrc();}},{passive:false});
+src.addEventListener("touchend",()=>{up();lst=null;});
+
+/* ============== 拖拽载入 ============== */
+["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("hover");}));
+["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("hover");}));
+drop.addEventListener("drop",e=>{const f=e.dataTransfer.files&&e.dataTransfer.files[0];if(f&&f.type.startsWith("image/"))loadFile(f);});
+drop.addEventListener("click",()=>file.click());
+file.addEventListener("change",()=>{if(file.files[0])loadFile(file.files[0]);});
+
+function loadFile(f){
+  const im=new Image();
+  im.onload=()=>{
+    img=im;natW=im.naturalWidth;natH=im.naturalHeight;pts=[];pins=[];corners=null;view={zoom:1,panX:0,panY:0};
+    const off=document.createElement("canvas");off.width=natW;off.height=natH;off.getContext("2d").drawImage(im,0,0);
+    srcData=off.getContext("2d").getImageData(0,0,natW,natH);
+    zoom.value=1;zoomVal.textContent="100%";
+    zoom.disabled=false;fitView.disabled=false;clear.disabled=false;reset.disabled=false;
+    computeView();drawSrc();updateUI();setStatus(`已载入 ${natW}×${natH}，开始沿边界点选`,"ok");
+  };
+  im.onerror=()=>setStatus("图片解码失败","err");
+  im.src=URL.createObjectURL(f);
+}
+
+/* ============== 按钮 ============== */
+function setStatus(t,kind){status.textContent=t;status.className="status"+(kind?" "+kind:"");}
+mPick.addEventListener("click",()=>{mode="pick";mPick.classList.add("on");mPin.classList.remove("on");mPan.classList.remove("on");src.style.cursor="crosshair";});
+mPin.addEventListener("click",()=>{mode="pin";mPin.classList.add("on");mPick.classList.remove("on");mPan.classList.remove("on");src.style.cursor="pointer";});
+mPan.addEventListener("click",()=>{mode="pan";mPan.classList.add("on");mPick.classList.remove("on");mPin.classList.remove("on");src.style.cursor="grab";});
+zoom.addEventListener("input",()=>{view.zoom=parseFloat(zoom.value);zoomVal.textContent=Math.round(view.zoom*100)+"%";computeView();drawSrc();});
+fitView.addEventListener("click",()=>{view={zoom:1,panX:0,panY:0};zoom.value=1;zoomVal.textContent="100%";computeView();drawSrc();});
+
+function updateUI(){
+  const nPin=pins.length;
+  fitBtn.disabled=!img||!(nPin===4||(nPin===0&&pts.length===4));
+  correct.disabled=!corners;
+  clearPins.disabled=nPin===0;
+  legend.style.display=corners?"flex":"none";
+  if(nPin===4&&!corners)setStatus("已钉 4 条边，但它们围不出有效四边形（可能有两条边几乎重合/平行），请检查","err");
+  else if(nPin===4)setStatus("已钉 4 条边 → 四边形已确定，可直接「透视矫正」","ok");
+  else if(nPin>0)setStatus(`已钉 ${nPin}/4 条边（再钉 ${4-nPin} 条即出四边形；点已钉的边可取消）`,"");
+  else if(pts.length===4)setStatus("已点 4 角 → 四边形已确定，可直接「透视矫正」","ok");
+  else if(pts.length>4)setStatus(`已点 ${pts.length} 个点：请保留恰好 4 个角（右键删点），或切📌钉边钉 4 条边`,"");
+  else setStatus(pts.length?`已点 ${pts.length}/4 个角`:"点 4 个角，或沿边多点几下后钉 4 条边","");
+  download.disabled=out.style.display==="none";
+}
+function doFit(){
+  const c=fitCorners();
+  if(!c){setStatus("还没有四边形：请点 4 个角，或沿边点好后钉满 4 条边","err");return;}
+  corners=c;drawSrc();updateUI();
+  setStatus(pins.length===4?"四角 = 4 条钉边的交点":"四角 = 你选的 4 个点","ok");
+}
+function clearImage(){
+  img=null;natW=natH=0;pts=[];pins=[];corners=null;view={zoom:1,panX:0,panY:0};srcData=null;
+  src.style.display="none";emptySrc.style.display="block";legend.style.display="none";
+  zoom.disabled=true;fitView.disabled=true;clear.disabled=true;reset.disabled=true;clearPins.disabled=true;fitBtn.disabled=true;correct.disabled=true;download.disabled=true;
+  emptyOut.style.display="block";out.style.display="none";meta.textContent="";zoom.value=1;zoomVal.textContent="100%";
+  setStatus("已清空，可再次拖入/选择图片","");
+}
+reset.addEventListener("click",()=>{pts=[];pins=[];corners=null;drawSrc();updateUI();setStatus("已清空选点与钉边","");meta.textContent="";emptyOut.style.display="block";out.style.display="none";download.disabled=true;status2.textContent="";});
+clearPins.addEventListener("click",()=>{pins=[];refresh();setStatus("已清除钉边","");});
+clear.addEventListener("click",clearImage);
+fitBtn.addEventListener("click",doFit);
+correct.addEventListener("click",correctNow);
+download.addEventListener("click",()=>{const a=document.createElement("a");a.download="corrected.png";a.href=out.toDataURL("image/png");a.click();});
+
+function correctNow(){
+  if(!img)return;
+  let sp;
+  if(corners) sp=corners;
+  else {const c=fitCorners();if(!c){setStatus("还没有四边形：请点 4 个角，或钉满 4 条边","err");return;}sp=c;corners=c;drawSrc();}
+  const W=Math.round((Math.hypot(sp[0].x-sp[1].x,sp[0].y-sp[1].y)+Math.hypot(sp[3].x-sp[2].x,sp[3].y-sp[2].y))/2);
+  const H=Math.round((Math.hypot(sp[0].x-sp[3].x,sp[0].y-sp[3].y)+Math.hypot(sp[1].x-sp[2].x,sp[1].y-sp[2].y))/2);
+  const dst=[{x:0,y:0},{x:W,y:0},{x:W,y:H},{x:0,y:H}];
+  const Hm=computeHomography(sp,dst);if(!Hm){setStatus("单应矩阵求解失败","err");return;}
+  const Hi=inv3(Hm);if(!Hi){setStatus("单应矩阵不可逆","err");return;}
+  out.width=W;out.height=H;const octx=out.getContext("2d");const oImg=octx.createImageData(W,H);const d=oImg.data;const sd=srcData.data;
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+    const s=applyH(Hi,x,y);const sx=s[0],sy=s[1];const idx=(y*W+x)*4;
+    if(sx<0||sy<0||sx>natW-1||sy>natH-1){d[idx+3]=0;continue;}
+    const x0=Math.floor(sx),y0=Math.floor(sy),x1=Math.min(x0+1,natW-1),y1=Math.min(y0+1,natH-1);
+    const fx=sx-x0,fy=sy-y0;
+    for(let ch=0;ch<3;ch++){
+      const v=(sd[(y0*natW+x0)*4+ch]*(1-fx)+sd[(y0*natW+x1)*4+ch]*fx)*(1-fy)
+             +(sd[(y1*natW+x0)*4+ch]*(1-fx)+sd[(y1*natW+x1)*4+ch]*fx)*fy;
+      d[idx+ch]=v;
+    }
+    d[idx+3]=255;
+  }
+  octx.putImageData(oImg,0,0);
+  out.style.display="block";emptyOut.style.display="none";meta.textContent=`输出尺寸：${W}×${H}（原图分辨率）`;
+  download.disabled=false;setStatus("透视矫正完成 ✅","ok");status2.textContent="已导出原图分辨率，点「下载 PNG」保存";
+}
+
+window.addEventListener("resize",()=>{if(img){computeView();drawSrc();}});
+</script>
+</body>
+</html>
